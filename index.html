@@ -22,7 +22,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;p
 </style>
 </head>
 <body>
-<header><h1>♟ <span>RUNE</span> GOMOKU ARENA</h1><div class="tag">LOCAL PROTOTYPE · v1</div></header>
+<header><h1>♟ <span>RUNE</span> GOMOKU ARENA</h1><div class="tag">FIREBASE CONNECTED · v2</div></header>
 <main>
 <section id="lobby" class="screen active">
 <div class="grid">
@@ -30,9 +30,9 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;p
 <div class="panel">
 <h2>대전 준비실</h2>
 <div id="authArea">
-<h3>로그인 / 새 계정</h3><input id="username" placeholder="게임 닉네임" maxlength="14"><input id="password" type="password" placeholder="비밀번호 (기기 내 저장용)">
+<h3>Firebase 계정 로그인 / 가입</h3><input id="username" placeholder="게임 닉네임" maxlength="14"><input id="email" type="email" placeholder="이메일 주소"><input id="password" type="password" placeholder="비밀번호 (6자 이상)">
 <div class="row"><button onclick="auth(true)">가입 및 로그인</button><button class="secondary" onclick="auth(false)">로그인</button></div>
-<p class="small">이 버전은 계정 정보를 현재 기기의 브라우저에만 저장합니다. 실제 온라인 계정이 아닙니다.</p>
+<p class="small">계정과 랭킹은 Firebase에 저장됩니다. 대전은 현재 봇 대전이며, 실시간 1:1 대전은 다음 연결 단계에서 추가합니다.</p>
 </div>
 <div id="profile" class="hidden"><div class="row"><div><h3 id="hello"></h3><p id="rankline"></p></div><button class="secondary" onclick="logout()">로그아웃</button></div>
 <div class="stats"><div class="stat"><b id="points">0</b><small>랭크 점수</small></div><div class="stat"><b id="wins">0</b><small>승리</small></div><div class="stat"><b id="losses">0</b><small>패배</small></div></div></div>
@@ -59,7 +59,24 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;p
 <label><input id="showNames" type="checkbox" style="width:auto"> 상대방 이름 표시</label><button onclick="saveSettings()">설정 저장</button>
 <h3 style="margin-top:22px">플레이어 점수 관리</h3><select id="playerSelect" style="width:100%;padding:10px;background:#0b1426;color:white;border:1px solid #30415f"></select><input id="editPoints" type="number" placeholder="변경할 점수"><button onclick="editPlayer()">점수 적용</button><p class="small">관리자 코드는 HTML에 포함된 데모용입니다. 공개 서비스에서는 서버에서 인증해야 합니다.</p></div></div></section>
 </main>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBYvsAgpj6o3Dw3dVV2_jXkExFsX7FzWiw",
+  authDomain: "gomoku-rank-arena.firebaseapp.com",
+  databaseURL: "https://gomoku-rank-arena-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "gomoku-rank-arena",
+  storageBucket: "gomoku-rank-arena.firebasestorage.app",
+  messagingSenderId: "237303162690",
+  appId: "1:237303162690:web:163364ef9f7ce89e39cadb",
+  measurementId: "G-6F4JXE51DL"
+};
+firebase.initializeApp(firebaseConfig);
+const firebaseAuth = firebase.auth();
+const realtimeDB = firebase.database();
+let firebaseUser = null, onlinePlayers = [], leaderboardListener = null;
 const KEY='runeGomokuArena_v1';
 const defaultSettings={lowWin:20,lowLoss:15,highWin:10,highLoss:20,band:100,turnSecs:20,showNames:true};
 let db=JSON.parse(localStorage.getItem(KEY)||'null')||{users:{},settings:defaultSettings};
@@ -71,12 +88,37 @@ const desc=['내가 마지막으로 둔 돌 하나를 되돌립니다.','이번 
 function save(){localStorage.setItem(KEY,JSON.stringify(db))}
 function rankIndex(points){return Math.min(11,Math.floor(Math.max(0,points)/db.settings.band))}
 function rankOf(u){let r=rankIndex(u.points);if(r<=3)r=Math.max(r,u.peak||0);return tiers[r]}
-function auth(create){let n=username.value.trim(),p=password.value;if(!n||!p)return alert('닉네임과 비밀번호를 입력하세요.');let u=db.users[n];if(create){if(u)return alert('이미 존재하는 닉네임입니다. 로그인해주세요.');db.users[n]={name:n,pass:p,points:0,peak:0,wins:0,losses:0};u=db.users[n]}else if(!u||u.pass!==p)return alert('로그인 정보가 올바르지 않습니다.');me=n;save();refresh()}
-function logout(){me=null;refresh()}
+async function auth(create){
+ const n=document.getElementById('username').value.trim(), e=document.getElementById('email').value.trim(), p=document.getElementById('password').value;
+ if(!n||!e||!p)return alert('닉네임, 이메일, 비밀번호를 모두 입력하세요.');
+ if(n.length>14)return alert('닉네임은 14자 이하로 입력하세요.');
+ if(p.length<6)return alert('비밀번호는 6자 이상이어야 합니다.');
+ try{
+  let credential;
+  if(create){
+   const existing=await realtimeDB.ref('players').orderByChild('name').equalTo(n).once('value');
+   if(existing.exists())return alert('이미 사용 중인 닉네임입니다.');
+   credential=await firebaseAuth.createUserWithEmailAndPassword(e,p);
+   firebaseUser=credential.user;
+   const profile={name:n,points:0,peak:0,wins:0,losses:0,updatedAt:firebase.database.ServerValue.TIMESTAMP};
+   await realtimeDB.ref('players/'+firebaseUser.uid).set(profile);
+   db.users[n]={...profile};
+  }else{
+   credential=await firebaseAuth.signInWithEmailAndPassword(e,p); firebaseUser=credential.user;
+   const snap=await realtimeDB.ref('players/'+firebaseUser.uid).once('value');
+   if(!snap.exists()){await firebaseAuth.signOut();return alert('플레이어 정보를 찾을 수 없습니다. 새 계정으로 가입해 주세요.');}
+   const profile=snap.val(); if(n!==profile.name)return alert('입력한 닉네임이 이 이메일 계정의 닉네임과 다릅니다.'); me=profile.name; db.users[me]={...profile};
+  }
+  me=create?n:me; save(); attachLeaderboard(); refresh();
+ }catch(err){alert(firebaseError(err));}
+}
+function firebaseError(err){const map={'auth/email-already-in-use':'이미 가입된 이메일입니다.','auth/invalid-email':'이메일 주소를 확인하세요.','auth/weak-password':'비밀번호는 6자 이상으로 설정하세요.','auth/invalid-credential':'이메일 또는 비밀번호가 올바르지 않습니다.','auth/operation-not-allowed':'Firebase에서 이메일/비밀번호 로그인을 먼저 사용 설정해야 합니다.','PERMISSION_DENIED':'Realtime Database 보안 규칙을 확인하세요.'};return map[err.code]||('Firebase 오류: '+(err.message||err.code));}
+function attachLeaderboard(){if(leaderboardListener)realtimeDB.ref('players').off('value',leaderboardListener);leaderboardListener=snap=>{onlinePlayers=[];snap.forEach(child=>{const v=child.val()||{};onlinePlayers.push({uid:child.key,...v});});onlinePlayers.sort((a,b)=>(b.points||0)-(a.points||0));leader();authBox();};realtimeDB.ref('players').on('value',leaderboardListener,err=>alert(firebaseError(err)));}
+async function logout(){try{await firebaseAuth.signOut();}catch(e){}firebaseUser=null;me=null;if(leaderboardListener){realtimeDB.ref('players').off('value',leaderboardListener);leaderboardListener=null;}refresh()}
 function show(id){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active')}
 function refresh(){authBox();leader();if(document.getElementById('adminPanel').classList.contains('hidden')===false)loadAdmin()}
-function authBox(){authArea.style.display=me?'none':'block';profile.classList.toggle('hidden',!me);matchBtn.disabled=!me;if(me){let u=db.users[me];hello.textContent='환영합니다, '+me;rankline.innerHTML='<span class="rank">'+rankOf(u)+'</span> · 최고 티어 보호 적용';points.textContent=u.points;wins.textContent=u.wins;losses.textContent=u.losses;myRank.textContent='내 현재 등수: '+(Object.keys(db.users).sort((a,b)=>db.users[b].points-db.users[a].points).indexOf(me)+1)+'위'}else myRank.textContent='로그인하면 내 등수를 확인할 수 있습니다.'}
-function leader(){let arr=Object.values(db.users).sort((a,b)=>b.points-a.points);leaderboard.innerHTML=arr.map((u,i)=>`<tr><td>${i+1}</td><td>${esc(u.name)}</td><td class="rank">${rankOf(u)}</td><td>${u.points}</td></tr>`).join('')||'<tr><td colspan="4">아직 플레이어가 없습니다.</td></tr>'}
+function authBox(){authArea.style.display=me?'none':'block';profile.classList.toggle('hidden',!me);matchBtn.disabled=!me;if(me){let u=db.users[me];hello.textContent='환영합니다, '+me;rankline.innerHTML='<span class="rank">'+rankOf(u)+'</span> · 최고 티어 보호 적용';points.textContent=u.points;wins.textContent=u.wins;losses.textContent=u.losses;myRank.textContent='내 현재 등수: '+((onlinePlayers.findIndex(x=>x.uid===firebaseUser?.uid))+1||Object.keys(db.users).sort((a,b)=>db.users[b].points-db.users[a].points).indexOf(me)+1)+'위'}else myRank.textContent='로그인하면 내 등수를 확인할 수 있습니다.'}
+function leader(){let arr=onlinePlayers.length?onlinePlayers:Object.values(db.users).sort((a,b)=>b.points-a.points);leaderboard.innerHTML=arr.map((u,i)=>`<tr><td>${i+1}</td><td>${esc(u.name||'Player')}</td><td class="rank">${rankOf(u)}</td><td>${u.points||0}</td></tr>`).join('')||'<tr><td colspan="4">아직 플레이어가 없습니다.</td></tr>'}
 function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function queueMatch(){matchBtn.disabled=true;queueMsg.classList.remove('hidden');queueMsg.textContent='상대를 찾는 중… 8초 후 봇 대전이 시작됩니다.';let t=8;queueMsg.textContent=`상대를 찾는 중… ${t}초`;queueTimer=setInterval(()=>{t--;queueMsg.textContent=`상대를 찾는 중… ${t}초`;if(t<=0){clearInterval(queueTimer);startMatch()}},1000)}
 function startMatch(){show('battle');board=Array.from({length:15},()=>Array(15).fill(0));history=[];turn=0;active=true;finished=false;used=[false,false];shield=[false,false];double=false;botDouble=false;cards=[Math.floor(Math.random()*4),Math.floor(Math.random()*4)];left=db.settings.turnSecs;renderBoard();updateBattle();startClock();battleMsg.textContent='대전 시작! 내 차례입니다.'}
@@ -95,12 +137,13 @@ function checkWin(x,y,w){for(let [dx,dy] of [[1,0],[0,1],[1,1],[1,-1]]){let n=1;
 function useMyCard(){if(used[0]||turn!==0||!active)return;if(shield[0]){shield[0]=false;used[0]=true;battleMsg.textContent='상대 방어막에 막혔습니다.';updateBattle();return}let c=cards[0];used[0]=true;if(c===0){let h=[...history].reverse().find(z=>z.who===1);if(h){board[h.y][h.x]=0;history=history.filter(z=>z!==h);battleMsg.textContent='내 마지막 돌을 되돌렸습니다.'}else battleMsg.textContent='되돌릴 내 돌이 없습니다.'}if(c===1){double=true;battleMsg.textContent='이번 착수 후 한 번 더 둘 수 있습니다.'}if(c===2){shield[1]=true;battleMsg.textContent='상대의 다음 특수카드를 막습니다.'}if(c===3){scanThreats(2);battleMsg.textContent='상대의 열린 4목 위협을 표시했습니다.'}renderBoard();updateBattle()}
 function scanThreats(w){document.querySelectorAll('.cell').forEach(c=>c.classList.remove('hint'));let found=new Set();for(let y=0;y<15;y++)for(let x=0;x<15;x++)if(!board[y][x]){board[y][x]=w;if(wouldWin(x,y,w))found.add(y*15+x);board[y][x]=0}found.forEach(i=>boardEl.children[i].classList.add('hint'))}
 function wouldWin(x,y,w){return checkWin(x,y,w)}
-function endMatch(playerWon){active=false;finished=true;clearInterval(timer);let u=db.users[me],delta=0;if(playerWon!==null){let low=rankIndex(u.points)<=3;delta=playerWon?(low?+db.settings.lowWin:+db.settings.highWin):-(low?db.settings.lowLoss:db.settings.highLoss);u.points=Math.max(0,u.points+delta);if(playerWon)u.wins++;else u.losses++;let r=rankIndex(u.points);if(r<=3)u.peak=Math.max(u.peak||0,r);save()}let title=playerWon===null?'무승부':playerWon?'승리!':'패배';resultTitle.textContent=title;resultText.textContent=playerWon===null?'점수 변동 없음':`${delta>0?'+':''}${delta}점 · 현재 ${u.points}점 · ${rankOf(u)}`;show('result');refresh()}
+async function endMatch(playerWon){active=false;finished=true;clearInterval(timer);let u=db.users[me],delta=0;if(playerWon!==null){let low=rankIndex(u.points)<=3;delta=playerWon?(low?+db.settings.lowWin:+db.settings.highWin):-(low?db.settings.lowLoss:db.settings.highLoss);u.points=Math.max(0,u.points+delta);if(playerWon)u.wins++;else u.losses++;let r=rankIndex(u.points);if(r<=3)u.peak=Math.max(u.peak||0,r);save();if(firebaseUser){try{await realtimeDB.ref('players/'+firebaseUser.uid).update({name:me,points:u.points,peak:u.peak||0,wins:u.wins,losses:u.losses,updatedAt:firebase.database.ServerValue.TIMESTAMP});}catch(err){alert('랭킹 서버 저장 실패: '+firebaseError(err));}}}let title=playerWon===null?'무승부':playerWon?'승리!':'패배';resultTitle.textContent=title;resultText.textContent=playerWon===null?'점수 변동 없음':`${delta>0?'+':''}${delta}점 · 현재 ${u.points}점 · ${rankOf(u)}`;show('result');refresh()}
 function backToLobby(){if(confirm('대전을 종료하고 준비실로 돌아갈까요?')){active=false;clearInterval(timer);show('lobby');refresh()}}
 function toggleMute(){muted=!muted;muteBtn.textContent=muted?'효과음 켜기':'효과음 끄기'}
 function adminLogin(){if(adminCode.value!=='3X$5T8')return alert('인증 코드가 올바르지 않습니다.');adminPanel.classList.remove('hidden');loadAdmin()}
 function loadAdmin(){lowWin.value=db.settings.lowWin;lowLoss.value=db.settings.lowLoss;highWin.value=db.settings.highWin;highLoss.value=db.settings.highLoss;band.value=db.settings.band;turnSecs.value=db.settings.turnSecs;showNames.checked=db.settings.showNames;playerSelect.innerHTML=Object.keys(db.users).map(n=>`<option>${esc(n)}</option>`).join('')}
 function saveSettings(){db.settings={lowWin:+lowWin.value,lowLoss:+lowLoss.value,highWin:+highWin.value,highLoss:+highLoss.value,band:Math.max(10,+band.value),turnSecs:Math.max(5,+turnSecs.value),showNames:showNames.checked};save();alert('설정을 저장했습니다.');refresh()}
-function editPlayer(){let n=playerSelect.value;if(!n||!db.users[n])return;db.users[n].points=Math.max(0,+editPoints.value||0);save();loadAdmin();refresh();alert('점수를 변경했습니다.')}
+function editPlayer(){let n=playerSelect.value;if(!n||!db.users[n])return;db.users[n].points=Math.max(0,+editPoints.value||0);save();loadAdmin();refresh();alert('점수 변경은 이 브라우저에만 적용됩니다. 온라인 랭킹은 계정 소유자 기록으로 관리됩니다.') }
+firebaseAuth.onAuthStateChanged(async user=>{if(!user)return;firebaseUser=user;try{const snap=await realtimeDB.ref('players/'+user.uid).once('value');if(snap.exists()){const profile=snap.val();me=profile.name;db.users[me]={...profile};save();attachLeaderboard();refresh();}}catch(err){console.error(err);}});
 </script>
 </body></html>
