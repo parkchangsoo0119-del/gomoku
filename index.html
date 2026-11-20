@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rune Gomoku Arena</title>
+<style>
+:root{--bg:#0b1020;--panel:#141d32;--panel2:#1b2943;--line:#30415f;--gold:#f6c96b;--mint:#69e0bd;--red:#ff7185;--txt:#eef4ff;--muted:#9aabc7}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#263b60,var(--bg) 55%);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+header{padding:18px 4vw;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263650;gap:12px}h1{font-size:clamp(20px,4vw,30px);margin:0}h1 span{color:var(--gold)}.tag{font-size:12px;color:var(--mint);border:1px solid #346b64;padding:5px 9px;border-radius:99px}
+main{max-width:1100px;margin:auto;padding:22px 16px 50px}.screen{display:none}.screen.active{display:block}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}.panel{background:linear-gradient(145deg,var(--panel),#10182a);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 14px 40px #0003;margin-bottom:15px}
+h2{font-size:19px;margin:0 0 14px}h3{font-size:15px;margin:0 0 10px;color:var(--gold)}p,.muted{color:var(--muted);line-height:1.55;font-size:14px}
+input,button{font:inherit;border-radius:10px}input{width:100%;padding:12px;background:#0b1426;border:1px solid var(--line);color:var(--txt);margin:5px 0 10px}button{border:0;padding:11px 15px;background:var(--gold);color:#241b09;font-weight:750;cursor:pointer}button.secondary{background:#273957;color:var(--txt);border:1px solid #3a5074}button.danger{background:#552638;color:#ffdce2}button:disabled{opacity:.45;cursor:not-allowed}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat{background:#0b1426;border:1px solid #273957;padding:12px;border-radius:12px}.stat b{display:block;font-size:20px;color:var(--gold)}.stat small{color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:9px 6px;border-bottom:1px solid #293a55}th{color:var(--muted)}
+#board{display:grid;grid-template-columns:repeat(15,minmax(0,1fr));width:min(88vw,570px);aspect-ratio:1;margin:12px auto;background:#d6ad70;padding:7px;border-radius:8px;gap:1px;touch-action:manipulation}
+.cell{background:#d6ad70;border:0;padding:0;position:relative;border-radius:0;min-width:0;min-height:0}
+.cell:before{content:"";position:absolute;left:50%;top:50%;width:1px;height:1px;background:#72512e;box-shadow:0 0 0 1px #72512e}
+.cell.black:after,.cell.white:after{content:"";position:absolute;width:78%;height:78%;border-radius:50%;left:11%;top:11%;box-shadow:0 2px 4px #0008}
+.cell.black:after{background:radial-gradient(circle at 35% 28%,#657187,#101521 65%)}.cell.white:after{background:radial-gradient(circle at 35% 28%,#fff,#cbd3df 75%)}
+.cell.hint{background:#f6d98d}.cell.hint:after{content:"✦";position:absolute;inset:0;color:#b02d50;font-size:16px}
+.battlebar{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.pill{background:#0a1425;border:1px solid #334866;border-radius:99px;padding:8px 12px;font-size:13px}.cardbox{background:#202e48;border:1px solid #53688a;border-radius:12px;padding:12px;min-width:150px}.cardbox strong{color:var(--gold)}.notice{padding:10px;border-radius:10px;background:#102d2a;color:#9af0d9;font-size:13px;margin:10px 0}.warning{background:#382b18;color:#ffdda0}.hidden{display:none!important}.rank{color:var(--gold);font-weight:800}.small{font-size:12px}.admin-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.admin-grid label{font-size:12px;color:var(--muted)}.admin-grid input{margin-top:4px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.panel{padding:14px}.stats{grid-template-columns:repeat(3,1fr)}#board{width:min(94vw,570px);padding:4px}.cell.hint:after{font-size:11px}header{padding:14px 16px}}
+</style>
+</head>
+<body>
+<header><h1>♟ <span>RUNE</span> GOMOKU ARENA</h1><div class="tag">LOCAL PROTOTYPE · v1</div></header>
+<main>
+<section id="lobby" class="screen active">
+<div class="grid">
+<div>
+<div class="panel">
+<h2>대전 준비실</h2>
+<div id="authArea">
+<h3>로그인 / 새 계정</h3><input id="username" placeholder="게임 닉네임" maxlength="14"><input id="password" type="password" placeholder="비밀번호 (기기 내 저장용)">
+<div class="row"><button onclick="auth(true)">가입 및 로그인</button><button class="secondary" onclick="auth(false)">로그인</button></div>
+<p class="small">이 버전은 계정 정보를 현재 기기의 브라우저에만 저장합니다. 실제 온라인 계정이 아닙니다.</p>
+</div>
+<div id="profile" class="hidden"><div class="row"><div><h3 id="hello"></h3><p id="rankline"></p></div><button class="secondary" onclick="logout()">로그아웃</button></div>
+<div class="stats"><div class="stat"><b id="points">0</b><small>랭크 점수</small></div><div class="stat"><b id="wins">0</b><small>승리</small></div><div class="stat"><b id="losses">0</b><small>패배</small></div></div></div>
+</div>
+<div class="panel"><h2>매칭</h2><p>상대가 없으면 약 8초 후 봇 대전을 시작합니다.</p><button id="matchBtn" onclick="queueMatch()" disabled>대전 시작</button> <button class="secondary" onclick="show('admin')">관리자 메뉴</button><div id="queueMsg" class="notice hidden"></div><p class="small">현재 버전은 로컬 봇 매칭입니다. 실시간 사람 간 대전은 서버 연결이 필요합니다.</p></div>
+</div>
+<div>
+<div class="panel"><h2>랭킹</h2><div id="myRank" class="notice">로그인하면 내 등수를 확인할 수 있습니다.</div><table><thead><tr><th>등수</th><th>플레이어</th><th>티어</th><th>점수</th></tr></thead><tbody id="leaderboard"></tbody></table></div>
+<div class="panel"><h2>랭크 규칙</h2><p>아이언~골드: 승리 +20 / 패배 -15, 달성한 최고 티어 아래로 강등되지 않습니다.<br>플래티넘~랭커: 승리 +10 / 패배 -20, 점수에 따라 강등될 수 있습니다.</p><p class="small">기본 티어 구간은 100점 단위이며 관리자 메뉴에서 조절할 수 있습니다.</p></div>
+</div>
+</div>
+</section>
+<section id="battle" class="screen">
+<div class="panel">
+<div class="battlebar"><span class="pill" id="turnLabel">내 차례</span><span class="pill">남은 시간 <b id="clock">20</b>초</span><span class="pill" id="opponentLabel">상대: Rune Bot</span></div>
+<div id="board" aria-label="15x15 오목판"></div>
+<div class="row"><div class="cardbox"><strong id="myCard">내 특수카드</strong><p id="myCardDesc" class="small"></p><button class="secondary" id="useCard" onclick="useMyCard()">카드 사용</button></div><div class="cardbox"><strong id="botCard">상대 특수카드</strong><p id="botCardDesc" class="small"></p></div></div>
+<div id="battleMsg" class="notice">빈 교차점을 눌러 돌을 놓으세요.</div><div class="row"><button class="secondary" onclick="backToLobby()">대전 포기</button><button class="secondary" onclick="toggleMute()" id="muteBtn">효과음 켜기</button></div>
+</div>
+</section>
+<section id="result" class="screen"><div class="panel"><h2 id="resultTitle">대전 결과</h2><p id="resultText"></p><button onclick="show('lobby');refresh()">준비실로</button></div></section>
+<section id="admin" class="screen"><div class="panel"><h2>관리자 인증</h2><input id="adminCode" type="password" placeholder="관리자 코드"><button onclick="adminLogin()">인증</button><button class="secondary" onclick="show('lobby')">돌아가기</button><div id="adminPanel" class="hidden"><hr><h3>점수 규칙</h3><div class="admin-grid">
+<label>아이언~골드 승리 점수<input id="lowWin" type="number"></label><label>아이언~골드 패배 감점<input id="lowLoss" type="number"></label><label>플래티넘~랭커 승리 점수<input id="highWin" type="number"></label><label>플래티넘~랭커 패배 감점<input id="highLoss" type="number"></label><label>티어별 점수 구간<input id="band" type="number" min="10"></label><label>턴 제한(초)<input id="turnSecs" type="number" min="5"></label></div>
+<label><input id="showNames" type="checkbox" style="width:auto"> 상대방 이름 표시</label><button onclick="saveSettings()">설정 저장</button>
+<h3 style="margin-top:22px">플레이어 점수 관리</h3><select id="playerSelect" style="width:100%;padding:10px;background:#0b1426;color:white;border:1px solid #30415f"></select><input id="editPoints" type="number" placeholder="변경할 점수"><button onclick="editPlayer()">점수 적용</button><p class="small">관리자 코드는 HTML에 포함된 데모용입니다. 공개 서비스에서는 서버에서 인증해야 합니다.</p></div></div></section>
+</main>
+<script>
+const KEY='runeGomokuArena_v1';
+const defaultSettings={lowWin:20,lowLoss:15,highWin:10,highLoss:20,band:100,turnSecs:20,showNames:true};
+let db=JSON.parse(localStorage.getItem(KEY)||'null')||{users:{},settings:defaultSettings};
+db.settings={...defaultSettings,...db.settings};
+let me=null,board=[],turn=0,active=false,finished=false,history=[],cards=[],used=[false,false],shield=[false,false],double=false,botDouble=false,timer=null,left=20,muted=true,queueTimer=null;
+const tiers=['아이언','브론즈','실버','골드','플래티넘','다이아1','다이아2','다이아3','마스터1','마스터2','마스터3','랭커'];
+const names=['시간 되감기','더블 착수','방어막','위협 탐지'];
+const desc=['내가 마지막으로 둔 돌 하나를 되돌립니다.','이번 차례에 돌을 한 번 더 놓습니다.','상대의 다음 특수카드를 무효화합니다.','상대의 열린 4목 위협 위치를 표시합니다.'];
+function save(){localStorage.setItem(KEY,JSON.stringify(db))}
+function rankIndex(points){return Math.min(11,Math.floor(Math.max(0,points)/db.settings.band))}
+function rankOf(u){let r=rankIndex(u.points);if(r<=3)r=Math.max(r,u.peak||0);return tiers[r]}
+function auth(create){let n=username.value.trim(),p=password.value;if(!n||!p)return alert('닉네임과 비밀번호를 입력하세요.');let u=db.users[n];if(create){if(u)return alert('이미 존재하는 닉네임입니다. 로그인해주세요.');db.users[n]={name:n,pass:p,points:0,peak:0,wins:0,losses:0};u=db.users[n]}else if(!u||u.pass!==p)return alert('로그인 정보가 올바르지 않습니다.');me=n;save();refresh()}
+function logout(){me=null;refresh()}
+function show(id){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active')}
+function refresh(){authBox();leader();if(document.getElementById('adminPanel').classList.contains('hidden')===false)loadAdmin()}
+function authBox(){authArea.style.display=me?'none':'block';profile.classList.toggle('hidden',!me);matchBtn.disabled=!me;if(me){let u=db.users[me];hello.textContent='환영합니다, '+me;rankline.innerHTML='<span class="rank">'+rankOf(u)+'</span> · 최고 티어 보호 적용';points.textContent=u.points;wins.textContent=u.wins;losses.textContent=u.losses;myRank.textContent='내 현재 등수: '+(Object.keys(db.users).sort((a,b)=>db.users[b].points-db.users[a].points).indexOf(me)+1)+'위'}else myRank.textContent='로그인하면 내 등수를 확인할 수 있습니다.'}
+function leader(){let arr=Object.values(db.users).sort((a,b)=>b.points-a.points);leaderboard.innerHTML=arr.map((u,i)=>`<tr><td>${i+1}</td><td>${esc(u.name)}</td><td class="rank">${rankOf(u)}</td><td>${u.points}</td></tr>`).join('')||'<tr><td colspan="4">아직 플레이어가 없습니다.</td></tr>'}
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function queueMatch(){matchBtn.disabled=true;queueMsg.classList.remove('hidden');queueMsg.textContent='상대를 찾는 중… 8초 후 봇 대전이 시작됩니다.';let t=8;queueMsg.textContent=`상대를 찾는 중… ${t}초`;queueTimer=setInterval(()=>{t--;queueMsg.textContent=`상대를 찾는 중… ${t}초`;if(t<=0){clearInterval(queueTimer);startMatch()}},1000)}
+function startMatch(){show('battle');board=Array.from({length:15},()=>Array(15).fill(0));history=[];turn=0;active=true;finished=false;used=[false,false];shield=[false,false];double=false;botDouble=false;cards=[Math.floor(Math.random()*4),Math.floor(Math.random()*4)];left=db.settings.turnSecs;renderBoard();updateBattle();startClock();battleMsg.textContent='대전 시작! 내 차례입니다.'}
+function renderBoard(){boardEl.innerHTML='';for(let y=0;y<15;y++)for(let x=0;x<15;x++){let b=document.createElement('button');b.className='cell'+(board[y][x]===1?' black':board[y][x]===2?' white':'');b.setAttribute('aria-label',`${y+1}행 ${x+1}열`);b.onclick=()=>move(x,y,1);b.dataset.x=x;b.dataset.y=y;boardEl.appendChild(b)}}
+const boardEl=document.getElementById('board');
+function updateBattle(){turnLabel.textContent=turn===0?'내 차례':'봇 차례';opponentLabel.textContent='상대: '+(db.settings.showNames?'Rune Bot':'비공개');myCard.textContent='내 카드: '+names[cards[0]];myCardDesc.textContent=desc[cards[0]]+(used[0]?' (사용 완료)':'');useCard.disabled=used[0]||turn!==0||finished;botCard.textContent='상대 카드: '+(used[1]?'사용 완료':'보유 중');botCardDesc.textContent='봇도 카드 한 장을 무작위로 받았습니다.'}
+function startClock(){clearInterval(timer);left=db.settings.turnSecs;clock.textContent=left;timer=setInterval(()=>{if(!active)return;left--;clock.textContent=left;if(left<=0){clearInterval(timer);if(turn===0){let m=bestMove(1);if(m)move(m.x,m.y,1,true)}else{let m=bestMove(2);if(m)move(m.x,m.y,2,true)} }},1000)}
+function move(x,y,who,auto=false){if(!active||finished||turn!==(who-1)||board[y][x])return;board[y][x]=who;history.push({x,y,who});renderBoard();if(checkWin(x,y,who)){endMatch(who===1);return}if(board.flat().every(v=>v)){endMatch(null);return}
+if((double&&who===1)||(botDouble&&who===2)){if(who===1)double=false;else botDouble=false;battleMsg.textContent='더블 착수! 한 번 더 놓으세요.';startClock();return}
+turn=1-(who-1);updateBattle();if(auto)battleMsg.textContent='시간 초과! 자동으로 착수했습니다.';startClock();if(turn===1)setTimeout(botTurn,550)}
+function botTurn(){if(!active||turn!==1)return;let c=cards[1];if(!used[1]&&Math.random()<.35){if(shield[1]){shield[1]=false;used[1]=true;battleMsg.textContent='봇의 특수카드가 방어막에 막혔습니다.';updateBattle()}else{used[1]=true;if(c===0){let h=[...history].reverse().find(z=>z.who===2);if(h){board[h.y][h.x]=0;history=history.filter(z=>z!==h)}}else if(c===1)botDouble=true;else if(c===2)shield[0]=true;else scanThreats(2);updateBattle()}}
+let m=bestMove(2);if(!m)return;move(m.x,m.y,2);if(active&&turn===1)setTimeout(botTurn,450)}
+function bestMove(who){let candidates=[];for(let y=0;y<15;y++)for(let x=0;x<15;x++)if(!board[y][x]){let s=scoreAt(x,y,who)*1.05+scoreAt(x,y,3-who)+Math.random()*2;candidates.push({x,y,s})}candidates.sort((a,b)=>b.s-a.s);return candidates[0]}
+function scoreAt(x,y,w){let total=0;for(let [dx,dy] of [[1,0],[0,1],[1,1],[1,-1]]){let n=1;for(let d of [-1,1]){let xx=x+d*dx,yy=y+d*dy;while(xx>=0&&xx<15&&yy>=0&&yy<15&&board[yy][xx]===w){n++;xx+=d*dx;yy+=d*dy}}total+=Math.pow(5,n)}return total}
+function checkWin(x,y,w){for(let [dx,dy] of [[1,0],[0,1],[1,1],[1,-1]]){let n=1;for(let d of [-1,1]){let xx=x+d*dx,yy=y+d*dy;while(xx>=0&&xx<15&&yy>=0&&yy<15&&board[yy][xx]===w){n++;xx+=d*dx;yy+=d*dy}}if(n>=5)return true}return false}
+function useMyCard(){if(used[0]||turn!==0||!active)return;if(shield[0]){shield[0]=false;used[0]=true;battleMsg.textContent='상대 방어막에 막혔습니다.';updateBattle();return}let c=cards[0];used[0]=true;if(c===0){let h=[...history].reverse().find(z=>z.who===1);if(h){board[h.y][h.x]=0;history=history.filter(z=>z!==h);battleMsg.textContent='내 마지막 돌을 되돌렸습니다.'}else battleMsg.textContent='되돌릴 내 돌이 없습니다.'}if(c===1){double=true;battleMsg.textContent='이번 착수 후 한 번 더 둘 수 있습니다.'}if(c===2){shield[1]=true;battleMsg.textContent='상대의 다음 특수카드를 막습니다.'}if(c===3){scanThreats(2);battleMsg.textContent='상대의 열린 4목 위협을 표시했습니다.'}renderBoard();updateBattle()}
+function scanThreats(w){document.querySelectorAll('.cell').forEach(c=>c.classList.remove('hint'));let found=new Set();for(let y=0;y<15;y++)for(let x=0;x<15;x++)if(!board[y][x]){board[y][x]=w;if(wouldWin(x,y,w))found.add(y*15+x);board[y][x]=0}found.forEach(i=>boardEl.children[i].classList.add('hint'))}
+function wouldWin(x,y,w){return checkWin(x,y,w)}
+function endMatch(playerWon){active=false;finished=true;clearInterval(timer);let u=db.users[me],delta=0;if(playerWon!==null){let low=rankIndex(u.points)<=3;delta=playerWon?(low?+db.settings.lowWin:+db.settings.highWin):-(low?db.settings.lowLoss:db.settings.highLoss);u.points=Math.max(0,u.points+delta);if(playerWon)u.wins++;else u.losses++;let r=rankIndex(u.points);if(r<=3)u.peak=Math.max(u.peak||0,r);save()}let title=playerWon===null?'무승부':playerWon?'승리!':'패배';resultTitle.textContent=title;resultText.textContent=playerWon===null?'점수 변동 없음':`${delta>0?'+':''}${delta}점 · 현재 ${u.points}점 · ${rankOf(u)}`;show('result');refresh()}
+function backToLobby(){if(confirm('대전을 종료하고 준비실로 돌아갈까요?')){active=false;clearInterval(timer);show('lobby');refresh()}}
+function toggleMute(){muted=!muted;muteBtn.textContent=muted?'효과음 켜기':'효과음 끄기'}
+function adminLogin(){if(adminCode.value!=='3X$5T8')return alert('인증 코드가 올바르지 않습니다.');adminPanel.classList.remove('hidden');loadAdmin()}
+function loadAdmin(){lowWin.value=db.settings.lowWin;lowLoss.value=db.settings.lowLoss;highWin.value=db.settings.highWin;highLoss.value=db.settings.highLoss;band.value=db.settings.band;turnSecs.value=db.settings.turnSecs;showNames.checked=db.settings.showNames;playerSelect.innerHTML=Object.keys(db.users).map(n=>`<option>${esc(n)}</option>`).join('')}
+function saveSettings(){db.settings={lowWin:+lowWin.value,lowLoss:+lowLoss.value,highWin:+highWin.value,highLoss:+highLoss.value,band:Math.max(10,+band.value),turnSecs:Math.max(5,+turnSecs.value),showNames:showNames.checked};save();alert('설정을 저장했습니다.');refresh()}
+function editPlayer(){let n=playerSelect.value;if(!n||!db.users[n])return;db.users[n].points=Math.max(0,+editPoints.value||0);save();loadAdmin();refresh();alert('점수를 변경했습니다.')}
+</script>
+</body></html>
